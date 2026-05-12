@@ -89,7 +89,7 @@ export function DashboardView() {
           <AttendedReportsTab reports={attendedReports} />
         ) : (
           <CriticalZonesTab 
-            zones={criticalZones} 
+            reports={reports} 
             onDownload={handleDownloadReport} 
             onSelectZone={setSelectedZone}
           />
@@ -268,9 +268,121 @@ function AttendedReportsTab({ reports }: { reports: any[] }) {
   );
 }
 
-function CriticalZonesTab({ zones, onDownload, onSelectZone }: { zones: any[]; onDownload: () => void; onSelectZone: (zone: any) => void }) {
+function CriticalZonesTab({ reports, onDownload, onSelectZone }: { reports: any[]; onDownload: () => void; onSelectZone: (zone: any) => void }) {
+  const [filterDistrict, setFilterDistrict] = useState<string>('all');
+  const [filterDay, setFilterDay] = useState<string>('all');
+  const [filterMonth, setFilterMonth] = useState<string>('all');
+  const [filterYear, setFilterYear] = useState<string>('all');
+  const [visibleCount, setVisibleCount] = useState<number>(10);
+
+  const activeReports = reports.filter(r => {
+    if (r.status === 'atendido') return false;
+    if (filterDistrict !== 'all' && r.district !== filterDistrict) return false;
+    
+    if (filterDay !== 'all' && filterMonth === 'all') return false;
+
+    if (r.date) {
+      const [yearStr, monthStr, dayStr] = r.date.split('-');
+      if (yearStr && monthStr && dayStr) {
+        const dYear = parseInt(yearStr, 10).toString();
+        const dMonth = parseInt(monthStr, 10).toString();
+        const dDay = parseInt(dayStr, 10).toString();
+
+        if (filterDay !== 'all' && dDay !== filterDay) return false;
+        if (filterMonth !== 'all' && dMonth !== filterMonth) return false;
+        if (filterYear !== 'all' && dYear !== filterYear) return false;
+      }
+    }
+    return true;
+  });
+
+  const streetCounts = activeReports.reduce((acc, report) => {
+    if (!acc[report.street]) {
+      acc[report.street] = {
+        street: report.street,
+        district: report.district,
+        count: 0,
+        description: report.description,
+        reports: []
+      };
+    }
+    acc[report.street].count++;
+    acc[report.street].reports.push(report);
+    return acc;
+  }, {} as Record<string, any>);
+
+  const zones = Object.values(streetCounts).sort((a: any, b: any) => b.count - a.count);
+  const visibleZones = zones.slice(0, visibleCount);
+
   return (
     <div className="space-y-4">
+      {/* Filters */}
+      <div className="bg-white rounded-lg p-4 border border-neutral-200">
+        <p className="text-sm font-bold text-neutral-900 mb-3">Filtros</p>
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex-1">
+            <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Distrito</label>
+            <select
+              value={filterDistrict}
+              onChange={(e) => { setFilterDistrict(e.target.value); setVisibleCount(10); }}
+              className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:border-neutral-900 focus:outline-none bg-white"
+            >
+              <option value="all">Todos los distritos</option>
+              {LIMA_DISTRICTS.map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="text-xs font-medium text-neutral-600 mb-1.5 block">Fecha de reporte</label>
+            <div className="flex gap-2">
+              <select
+                value={filterDay}
+                onChange={(e) => { setFilterDay(e.target.value); setVisibleCount(10); }}
+                className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:border-neutral-900 focus:outline-none bg-white"
+              >
+                <option value="all">Día</option>
+                {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                  <option key={d} value={d.toString()}>{d}</option>
+                ))}
+              </select>
+              <select
+                value={filterMonth}
+                onChange={(e) => { setFilterMonth(e.target.value); setVisibleCount(10); }}
+                className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:border-neutral-900 focus:outline-none bg-white"
+              >
+                <option value="all">Mes</option>
+                <option value="1">Ene</option>
+                <option value="2">Feb</option>
+                <option value="3">Mar</option>
+                <option value="4">Abr</option>
+                <option value="5">May</option>
+                <option value="6">Jun</option>
+                <option value="7">Jul</option>
+                <option value="8">Ago</option>
+                <option value="9">Sep</option>
+                <option value="10">Oct</option>
+                <option value="11">Nov</option>
+                <option value="12">Dic</option>
+              </select>
+              <select
+                value={filterYear}
+                onChange={(e) => { setFilterYear(e.target.value); setVisibleCount(10); }}
+                className="w-full px-3 py-2 border border-neutral-200 rounded-lg text-sm focus:border-neutral-900 focus:outline-none bg-white"
+              >
+                <option value="all">Año</option>
+                <option value="2026">2026</option>
+                <option value="2025">2025</option>
+                <option value="2024">2024</option>
+              </select>
+            </div>
+            {filterDay !== 'all' && filterMonth === 'all' && (
+              <p className="text-red-500 text-[10px] mt-1 font-medium">Requiere seleccionar un mes</p>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Download Button */}
       <button
         onClick={onDownload}
@@ -288,39 +400,57 @@ function CriticalZonesTab({ zones, onDownload, onSelectZone }: { zones: any[]; o
             Basado en acumulación de reportes activos
           </p>
         </div>
-        <div className="divide-y divide-neutral-200">
-          {zones.map((zone, index) => (
-            <div 
-              key={zone.street} 
-              className="p-4 hover:bg-neutral-50 transition-colors cursor-pointer"
-              onClick={() => onSelectZone(zone)}
-            >
-              <div className="flex items-start gap-3">
-                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                  index === 0 ? 'bg-neutral-900 text-white' :
-                  index === 1 ? 'bg-neutral-700 text-white' :
-                  index === 2 ? 'bg-neutral-500 text-white' :
-                  'bg-neutral-200 text-neutral-700'
-                }`}>
-                  {index + 1}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-neutral-900 mb-1">{zone.street}</p>
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-600">
-                    <span className="flex items-center gap-1">
-                      <MapPin size={12} />
-                      {zone.district}
-                    </span>
-                    <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-full font-medium">
-                      {zone.count} reportes activos
-                    </span>
+        
+        {zones.length === 0 ? (
+          <div className="p-8 text-center text-sm text-neutral-600">
+            No hay zonas críticas con estos filtros
+          </div>
+        ) : (
+          <div className="divide-y divide-neutral-200">
+            {visibleZones.map((zone, index) => (
+              <div 
+                key={zone.street} 
+                className="p-4 hover:bg-neutral-50 transition-colors cursor-pointer"
+                onClick={() => onSelectZone(zone)}
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                    index === 0 ? 'bg-neutral-900 text-white' :
+                    index === 1 ? 'bg-neutral-700 text-white' :
+                    index === 2 ? 'bg-neutral-500 text-white' :
+                    'bg-neutral-200 text-neutral-700'
+                  }`}>
+                    {index + 1}
                   </div>
-                  <p className="text-sm text-neutral-700 mt-2 line-clamp-2">{zone.description}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-neutral-900 mb-1">{zone.street}</p>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-600">
+                      <span className="flex items-center gap-1">
+                        <MapPin size={12} />
+                        {zone.district}
+                      </span>
+                      <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-full font-medium">
+                        {zone.count} reportes activos
+                      </span>
+                    </div>
+                    <p className="text-sm text-neutral-700 mt-2 line-clamp-2">{zone.description}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
+        
+        {visibleCount < zones.length && (
+          <div className="p-4 border-t border-neutral-200 flex justify-center bg-neutral-50">
+            <button 
+              onClick={() => setVisibleCount(prev => prev + 10)}
+              className="text-sm font-bold text-neutral-900 hover:text-neutral-600 transition-colors px-4 py-2 rounded-lg border border-neutral-200 bg-white shadow-sm"
+            >
+              Ver más zonas ({zones.length - visibleCount} restantes)
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -344,6 +474,5 @@ function getCriticalZones(reports: any[]) {
   }, {} as Record<string, any>);
 
   return Object.values(streetCounts)
-    .sort((a: any, b: any) => b.count - a.count)
-    .slice(0, 10);
+    .sort((a: any, b: any) => b.count - a.count);
 }

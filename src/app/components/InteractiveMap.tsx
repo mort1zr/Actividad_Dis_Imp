@@ -1,7 +1,7 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useReports, ReportType } from '../context/ReportContext';
 import { GoogleMap, useJsApiLoader, OverlayView } from '@react-google-maps/api';
-import { MapPin, AlertCircle, Lightbulb, Construction } from 'lucide-react';
+import { MapPin, AlertCircle, Lightbulb, Construction, Navigation } from 'lucide-react';
 
 interface InteractiveMapProps {
   onMapClick?: (lat: number, lng: number) => void;
@@ -73,6 +73,7 @@ const MAP_OPTIONS = {
 export function InteractiveMap({ onMapClick }: InteractiveMapProps) {
   const { reports, setSelectedReport, filterType } = useReports();
   const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
 
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
@@ -96,6 +97,52 @@ export function InteractiveMap({ onMapClick }: InteractiveMapProps) {
   const onUnmount = useCallback(function callback() {
     setMap(null);
   }, []);
+
+  useEffect(() => {
+    if ('geolocation' in navigator) {
+      const watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.error("Error obteniendo ubicación:", error);
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+      );
+      
+      return () => navigator.geolocation.clearWatch(watchId);
+    }
+  }, []);
+
+  const handleCenterLocation = () => {
+    if (userLocation && map) {
+      map.panTo(userLocation);
+      map.setZoom(16);
+    } else if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const loc = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+          setUserLocation(loc);
+          if (map) {
+            map.panTo(loc);
+            map.setZoom(16);
+          }
+        },
+        (error) => {
+          alert("No se pudo obtener tu ubicación. Por favor, asegura dar los permisos necesarios al navegador.");
+        },
+        { enableHighAccuracy: true }
+      );
+    } else {
+      alert("Tu navegador no soporta geolocalización.");
+    }
+  };
 
   if (!isLoaded) {
     return (
@@ -158,6 +205,21 @@ export function InteractiveMap({ onMapClick }: InteractiveMapProps) {
             </OverlayView>
           );
         })}
+
+        {/* User GPS Location Marker */}
+        {userLocation && (
+          <OverlayView
+            position={userLocation}
+            mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+          >
+            <div className="absolute -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
+              <div className="relative flex h-6 w-6">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-6 w-6 bg-blue-500 border-2 border-white shadow-md"></span>
+              </div>
+            </div>
+          </OverlayView>
+        )}
       </GoogleMap>
 
       {/* Map Legend */}
@@ -176,8 +238,22 @@ export function InteractiveMap({ onMapClick }: InteractiveMapProps) {
             <div className="w-3 h-3 rounded-full bg-neutral-500"></div>
             <span className="text-neutral-600">Iluminación insuficiente</span>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-blue-500 border border-white"></div>
+            <span className="text-neutral-600">Tu ubicación</span>
+          </div>
         </div>
       </div>
+
+      {/* Locate Me Button */}
+      <button 
+        onClick={handleCenterLocation}
+        className="absolute bottom-6 right-4 bg-white p-3 rounded-full shadow-lg border border-neutral-200 z-[1] hover:bg-neutral-50 transition-colors"
+        title="Centrar en mi ubicación"
+        aria-label="Mi ubicación"
+      >
+        <Navigation size={20} className={userLocation ? "text-blue-500" : "text-neutral-600"} />
+      </button>
     </div>
   );
 }
